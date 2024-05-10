@@ -1,0 +1,79 @@
+version: '3.9'
+
+services:
+  mssql:
+    image: mcr.microsoft.com/azure-sql-edge:latest
+    restart: always
+    environment:
+      - "ACCEPT_EULA=1"
+      - "MSSQL_SA_PASSWORD=SU2orange!"
+    hostname: mssql
+    volumes:
+      - "mssql-azuresql-edge-data:/var/opt/mssql"
+
+  cache:
+    image: redis:latest
+    restart: always
+    volumes:
+      - cache:/data
+
+  app:
+    image: 'jc21/nginx-proxy-manager:latest'
+    restart: unless-stopped
+    ports:
+      # These ports are in format <host-port>:<container-port>
+      - '80:80' # Public HTTP Port
+      - '443:443' # Public HTTPS Port
+      - '81:81' # Admin Web Port
+      # Add any other Stream port you want to expose
+      - '1433:1433' # sql
+      - '6379:6379' # redis
+
+    # Uncomment the next line if you uncomment anything in the section
+    # environment:
+      # Uncomment this if you want to change the location of
+      # the SQLite DB file within the container
+      # DB_SQLITE_FILE: "/data/database.sqlite"
+
+      # Uncomment this if IPv6 is not enabled on your host
+      # DISABLE_IPV6: 'true'
+
+    volumes:
+      - ./data:/data
+      - ./letsencrypt:/etc/letsencrypt
+
+  postgres:
+    image: postgres:${POSTGRES_VERSION}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "keycloak"]
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: password
+    volumes:
+      - ~/apps/postgres:/var/lib/postgresql/data
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:${KC_VERSION}
+    command: ["start-dev", "--import-realm"]
+    restart: unless-stopped
+    environment:
+      KC_DB: postgres
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: password
+      KC_DB_URL: "jdbc:postgresql://postgres:5432/keycloak"
+      KC_METRICS_ENABLED: true
+      KC_LOG_LEVEL: ${KC_LOG_LEVEL}
+      KC_REALM_NAME: ${KC_REALM_NAME}
+      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+    ports:
+      - ${KC_PORT}:8080
+    volumes:
+      - ./keycloak/realm.json:/opt/keycloak/data/import/realm.json:ro
+
+volumes:
+  cache:
+    driver: local
+  mssql-azuresql-edge-data:
